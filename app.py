@@ -39,28 +39,34 @@ df = load_data()
 with st.form("score_form", clear_on_submit=True):
     score = st.slider("Wat is de score?", 1, 10, 5)
     
-    # Handmatige datum en tijd (standaard op NU in NL tijd)
+    # Gebruik session_state om de tijd even vast te houden tijdens het invullen
     nu_nl = get_nederlandse_tijd()
-    gekozen_datum = st.date_input("Datum", nu_nl.date())
-    gekozen_tijd = st.time_input("Tijdstip", nu_nl.time())
+    
+    # We geven de widgets een unieke 'key' zodat Streamlit de waarde beter bewaart
+    gekozen_datum = st.date_input("Datum", value=nu_nl.date(), key="input_datum")
+    gekozen_tijd = st.time_input("Tijdstip", value=nu_nl.time(), key="input_tijd")
     
     submitted = st.form_submit_button("Opslaan")
     
     if submitted:
-        # Combineer datum en tijd tot één timestamp
-        dt_combi = datetime.datetime.combine(gekozen_datum, gekozen_tijd)
+        # Belangrijk: We halen de waarde direct uit de widgets en maken de timestamp 'schoon'
+        # De .replace(microsecond=0) voorkomt dat de huidige milliseconden meeliften
+        dt_combi = datetime.datetime.combine(gekozen_datum, gekozen_tijd).replace(microsecond=0)
         
         new_data = {
             "timestamp": dt_combi.isoformat(),
             "datum": gekozen_datum.strftime("%Y-%m-%d"),
             "tijd": gekozen_tijd.strftime("%H:%M"),
-            "score": score
+            "score": int(score) # Forceer integer
         }
         
         # Opslaan in Firebase
-        col_ref.add(new_data)
-        st.success(f"Score {score} opgeslagen voor {gekozen_datum}!")
-        st.rerun()
+        if col_ref:
+            col_ref.add(new_data)
+            st.success(f"Score {score} opgeslagen voor {gekozen_datum} om {new_data['tijd']}!")
+            # Geef de database even een seconde voor de rerun zodat de data zichtbaar is
+            time.sleep(0.5) 
+            st.rerun()
 
 # --- 5. VISUALISATIE ---
 if not df.empty:
