@@ -64,29 +64,53 @@ with st.form("score_form", clear_on_submit=True):
 
 # --- 5. VISUALISATIE ---
 if not df.empty:
+    # Forceer de timestamp naar een echt datetime object
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     
     st.subheader("Jouw verloop")
     
+    # Sorteer de dagen zodat de nieuwste bovenaan staat in de selector
     dagen = sorted(df['datum'].unique(), reverse=True)
     geselecteerde_dag = st.selectbox("Bekijk dag:", dagen)
     
-    dag_data = df[df['datum'] == geselecteerde_dag].sort_values("timestamp")
+    # Filter de data voor de gekozen dag
+    dag_data = df[df['datum'] == geselecteerde_dag].copy()
     
-    # Gebogen lijn grafiek via Vega-Lite
+    # Sorteer de data van die dag op het exacte tijdstip
+    dag_data = dag_data.sort_values("timestamp")
+    
+    # Verbeterde Grafiek Spec
     chart_spec = {
-        "mark": {"type": "line", "interpolate": "monotone", "point": True},
+        "mark": {
+            "type": "line", 
+            "interpolate": "monotone", 
+            "point": {"filled": True, "size": 100} # Maak de punten duidelijker
+        },
         "encoding": {
-            "x": {"field": "tijd", "type": "nominal", "title": "Tijdstip"},
-            "y": {"field": "score", "type": "quantitative", "scale": {"domain": [1, 10]}, "title": "Score"},
-            "color": {"value": "#ff4b4b"}
+            "x": {
+                "field": "timestamp", 
+                "type": "temporal",  # Veranderd van nominal naar temporal
+                "title": "Tijdstip",
+                "axis": {"format": "%H:%M"} # Toon alleen uren:minuten op de as
+            },
+            "y": {
+                "field": "score", 
+                "type": "quantitative", 
+                "scale": {"domain": [1, 10]}, 
+                "title": "Kwaliteitsscore"
+            },
+            "color": {"value": "#ff4b4b"},
+            "tooltip": [
+                {"field": "tijd", "title": "Tijd"},
+                {"field": "score", "title": "Score"}
+            ]
         },
         "config": {"view": {"stroke": "transparent"}}
     }
     
     st.vega_lite_chart(dag_data, chart_spec, use_container_width=True)
     
-    if st.checkbox("Toon alle geschiedenis"):
-        st.write(df.sort_values("timestamp", ascending=False))
+    if st.checkbox("Toon tabel van vandaag"):
+        st.dataframe(dag_data[["tijd", "score"]].sort_values("tijd"))
 else:
-    st.info("Nog geen scores aanwezig in Firebase.")
+    st.info("Nog geen scores gevonden. Voer je eerste score hierboven in!")
