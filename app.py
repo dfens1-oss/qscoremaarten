@@ -1,52 +1,92 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import os
+import pytz
+from google.cloud import firestore
+from google.oauth2 import service_account
+import json
 
-# Bestandsnaam voor opslag
-DATA_FILE = "scores.csv"
+# --- 1. FIREBASE SETUP ---
+# Zorg dat je 'firebase_service_account' in je Streamlit Secrets hebt staan
+def get_db():
+    if "db" not in st.session_state:
+        key_dict = json.loads(st.secrets["textkey"]) # Of hoe je je secret noemt
+        creds = service_account.Credentials.from_service_account_info(key_dict)
+        st.session_state.db = firestore.Client(credentials=creds)
+    return st.session_state.db
+
+db = get_db()
+col_ref = db.collection("kwaliteitsscores")
+
+# --- 2. HELPERS ---
+def get_nederlandse_tijd():
+    tz = pytz.timezone('Europe/Amsterdam')
+    return datetime.datetime.now(tz)
 
 st.title("Dagelijkse Kwaliteitsscore")
 
-# 1. Data laden of aanmaken
-if os.path.exists(DATA_FILE):
-    df = pd.read_csv(DATA_FILE)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-else:
-    df = pd.DataFrame(columns=["timestamp", "datum", "tijd", "score"])
+# --- 3. DATA LADEN (Uit Firebase) ---
+def load_data():
+    docs = col_ref.stream()
+    data = []
+    for doc in docs:
+        data.append(doc.to_dict())
+    return pd.DataFrame(data)
 
-# 2. Invoer gedeelte
+df = load_data()
+
+# --- 4. INVOER GEDEELTE ---
 with st.form("score_form", clear_on_submit=True):
-    score = st.slider("Wat is de score van dit moment?", 1, 10, 5)
+    score = st.slider("Wat is de score?", 1, 10, 5)
+    
+    # Handmatige datum en tijd (standaard op NU in NL tijd)
+    nu_nl = get_nederlandse_tijd()
+    gekozen_datum = st.date_input("Datum", nu_nl.date())
+    gekozen_tijd = st.time_input("Tijdstip", nu_nl.time())
+    
     submitted = st.form_submit_button("Opslaan")
     
     if submitted:
-        nu = datetime.datetime.now()
+        # Combineer datum en tijd tot één timestamp
+        dt_combi = datetime.datetime.combine(gekozen_datum, gekozen_tijd)
+        
         new_data = {
-            "timestamp": nu,
-            "datum": nu.strftime("%Y-%m-%d"),
-            "tijd": nu.strftime("%H:%M"),
+            "timestamp": dt_combi.isoformat(),
+            "datum": gekozen_datum.strftime("%Y-%m-%d"),
+            "tijd": gekozen_tijd.strftime("%H:%M"),
             "score": score
         }
-        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-        df.to_csv(DATA_FILE, index=False)
-        st.success(f"Score {score} opgeslagen!")
+        
+        # Opslaan in Firebase
+        col_ref.add(new_data)
+        st.success(f"Score {score} opgeslagen voor {gekozen_datum}!")
+        st.rerun()
 
-# 3. Visualisatie
+# --- 5. VISUALISATIE ---
 if not df.empty:
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    
     st.subheader("Jouw verloop")
     
-    # Filteren op dag (optioneel, hier tonen we alles)
-    dagen = df['datum'].unique()
-    geselecteerde_dag = st.selectbox("Bekijk dag:", dagen[::-1]) # Nieuwste bovenaan
+    dagen = sorted(df['datum'].unique(), reverse=True)
+    geselecteerde_dag = st.selectbox("Bekijk dag:", dagen)
     
     dag_data = df[df['datum'] == geselecteerde_dag].sort_values("timestamp")
     
-    # Grafiek tekenen
-    st.line_chart(data=dag_data, x="tijd", y="score")
+    # Gebogen lijn grafiek via Vega-Lite
+    chart_spec = {
+        "mark": {"type": "line", "interpolate": "monotone", "point": True},
+        "encoding": {
+            "x": {"field": "tijd", "type": "nominal", "title": "Tijdstip"},
+            "y": {"field": "score", "type": "quantitative", "scale": {"domain": [1, 10]}, "title": "Score"},
+            "color": {"value": "#ff4b4b"}
+        },
+        "config": {"view": {"stroke": "transparent"}}
+    }
     
-    # Tabelweergave voor details
-    if st.checkbox("Toon ruwe data"):
-        st.write(dag_data)
+    st.vega_lite_chart(dag_data, chart_spec, use_container_width=True)
+    
+    if st.checkbox("Toon alle geschiedenis"):
+        st.write(df.sort_values("timestamp", ascending=False))
 else:
-    st.info("Nog geen scores ingevoerd. Begin hierboven!")
+    st.info("Nog geen scores aanwezig in Firebase.")
