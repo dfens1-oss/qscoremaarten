@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import pytz
+import time
 from google.cloud import firestore
 from google.oauth2 import service_account
 import json
@@ -39,34 +40,37 @@ df = load_data()
 with st.form("score_form", clear_on_submit=True):
     score = st.slider("Wat is de score?", 1, 10, 5)
     
-    # Gebruik session_state om de tijd even vast te houden tijdens het invullen
     nu_nl = get_nederlandse_tijd()
-    
-    # We geven de widgets een unieke 'key' zodat Streamlit de waarde beter bewaart
-    gekozen_datum = st.date_input("Datum", value=nu_nl.date(), key="input_datum")
-    gekozen_tijd = st.time_input("Tijdstip", value=nu_nl.time(), key="input_tijd")
+
+    # OPTIE: Handmatig typen van datum en tijd
+    # We gebruiken text_input zodat je gewoon '2026-03-30' kunt typen
+    datum_str = st.text_input("Datum (JJJJ-MM-DD)", value=nu_nl.strftime("%Y-%m-%d"))
+    tijd_str = st.text_input("Tijdstip (UU:MM)", value=nu_nl.strftime("%H:%M"))
     
     submitted = st.form_submit_button("Opslaan")
     
     if submitted:
-        # Belangrijk: We halen de waarde direct uit de widgets en maken de timestamp 'schoon'
-        # De .replace(microsecond=0) voorkomt dat de huidige milliseconden meeliften
-        dt_combi = datetime.datetime.combine(gekozen_datum, gekozen_tijd).replace(microsecond=0)
-        
-        new_data = {
-            "timestamp": dt_combi.isoformat(),
-            "datum": gekozen_datum.strftime("%Y-%m-%d"),
-            "tijd": gekozen_tijd.strftime("%H:%M"),
-            "score": int(score) # Forceer integer
-        }
-        
-        # Opslaan in Firebase
-        if col_ref:
-            col_ref.add(new_data)
-            st.success(f"Score {score} opgeslagen voor {gekozen_datum} om {new_data['tijd']}!")
-            # Geef de database even een seconde voor de rerun zodat de data zichtbaar is
-            time.sleep(0.5) 
-            st.rerun()
+        try:
+            # Converteer je getypte tekst naar echte tijd-objecten
+            schone_datum = datetime.datetime.strptime(datum_str, "%Y-%m-%d").date()
+            schone_tijd = datetime.datetime.strptime(tijd_str, "%H:%M").time()
+            
+            dt_combi = datetime.datetime.combine(schone_datum, schone_tijd)
+            
+            new_data = {
+                "timestamp": dt_combi.isoformat(),
+                "datum": schone_datum.strftime("%Y-%m-%d"),
+                "tijd": schone_tijd.strftime("%H:%M"),
+                "score": int(score)
+            }
+            
+            if col_ref:
+                col_ref.add(new_data)
+                st.success(f"✅ Opgeslagen: {score} op {datum_str} om {tijd_str}")
+                time.sleep(0.5) 
+                st.rerun()
+        except ValueError:
+            st.error("Foutformaat! Gebruik JJJJ-MM-DD voor datum en UU:MM voor tijd.")
 
 # --- 5. VISUALISATIE ---
 if not df.empty:
