@@ -42,18 +42,22 @@ with st.form("score_form", clear_on_submit=True):
     
     nu_nl = get_nederlandse_tijd()
 
-    # OPTIE: Handmatig typen van datum en tijd
-    # We gebruiken text_input zodat je gewoon '2026-03-30' kunt typen
-    datum_str = st.text_input("Datum (JJJJ-MM-DD)", value=nu_nl.strftime("%Y-%m-%d"))
-    tijd_str = st.text_input("Tijdstip (UU:MM)", value=nu_nl.strftime("%H:%M"))
+    # Door 'key' toe te voegen, onthoudt Streamlit wat JIJ hebt getypt 
+    # en overschrijft hij het niet met de huidige tijd tijdens het submitten.
+    datum_str = st.text_input("Datum (JJJJ-MM-DD)", value=nu_nl.strftime("%Y-%m-%d"), key="datum_veld")
+    tijd_str = st.text_input("Tijdstip (UU:MM)", value=nu_nl.strftime("%H:%M"), key="tijd_veld")
     
     submitted = st.form_submit_button("Opslaan")
     
     if submitted:
         try:
-            # Converteer je getypte tekst naar echte tijd-objecten
-            schone_datum = datetime.datetime.strptime(datum_str, "%Y-%m-%d").date()
-            schone_tijd = datetime.datetime.strptime(tijd_str, "%H:%M").time()
+            # We halen de waarden nu expliciet uit de 'key' van de widget
+            # Dit is de meest veilige manier binnen een Streamlit form
+            input_datum = st.session_state.datum_veld
+            input_tijd = st.session_state.tijd_veld
+            
+            schone_datum = datetime.datetime.strptime(input_datum, "%Y-%m-%d").date()
+            schone_tijd = datetime.datetime.strptime(input_tijd, "%H:%M").time()
             
             dt_combi = datetime.datetime.combine(schone_datum, schone_tijd)
             
@@ -66,7 +70,7 @@ with st.form("score_form", clear_on_submit=True):
             
             if col_ref:
                 col_ref.add(new_data)
-                st.success(f"✅ Opgeslagen: {score} op {datum_str} om {tijd_str}")
+                st.success(f"✅ Opgeslagen: {score} op {input_datum} om {input_tijd}")
                 time.sleep(0.5) 
                 st.rerun()
         except ValueError:
