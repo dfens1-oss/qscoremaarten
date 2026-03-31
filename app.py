@@ -10,7 +10,7 @@ import json
 # Zorg dat je 'firebase_service_account' in je Streamlit Secrets hebt staan
 def get_db():
     if "db" not in st.session_state:
-        key_dict = json.loads(st.secrets["textkey"]) # Of hoe je je secret noemt
+        key_dict = json.loads(st.secrets["firebase_secrets"])
         creds = service_account.Credentials.from_service_account_info(key_dict)
         st.session_state.db = firestore.Client(credentials=creds)
     return st.session_state.db
